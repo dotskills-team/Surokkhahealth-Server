@@ -1,0 +1,1 @@
+export const userSearchableFields = ["name", "phone", "customId", "employeeId", "email"];
