@@ -10,6 +10,7 @@ import { Subscription } from "../subscription/subscription.model";
 import { Notification } from "../notification/notification.model";
 import { NotificationType } from "../notification/notification.interface";
 import { Types } from "mongoose";
+import { User } from "../user/user.model";
 
 // DATE FILTER HELPERS
 // startDate only  → exact day match on createdAt
@@ -95,6 +96,30 @@ const getAllClaims = async ({
     ...dateFilter,
   };
 
+  const searchTerm = query.searchTerm;
+
+  if (searchTerm) {
+    const users = await User.find({
+      $or: [
+        { name: { $regex: searchTerm, $options: "i" } },
+        { phone: { $regex: searchTerm, $options: "i" } },
+        { email: { $regex: searchTerm, $options: "i" } },
+      ],
+    }).select("_id");
+
+    const customerIds = users.map((user) => user._id);
+
+    baseFilter.$or = [
+      { claimTitle: { $regex: searchTerm, $options: "i" } },
+      { description: { $regex: searchTerm, $options: "i" } },
+      { adminNote: { $regex: searchTerm, $options: "i" } },
+      { status: { $regex: searchTerm, $options: "i" } },
+      { customer: { $in: customerIds } },
+    ];
+
+    delete query.searchTerm;
+  }
+
   // Non-admin only sees their own claims
   if (!isAdminLevel) {
     baseFilter.customer = user.userId;
@@ -109,19 +134,19 @@ const getAllClaims = async ({
   // ─── DATA QUERY ───────────────────────────────────
   const queryBuilder = new QueryBuilder(Claim.find(baseFilter), query);
 
-const data = await queryBuilder
-  .search(claimSearchableFields)
-  .filter()
-  .sort()
-  .fields()
-  .paginate()
-  .build()
-  .populate("customer", "name phone role")
-  .populate({
-    path: "subscription",
-    populate: { path: "package", select: "name title" },
-  })
-  .populate("reviewedBy", "name phone role");
+  const data = await queryBuilder
+    .search(claimSearchableFields)
+    .filter()
+    .sort()
+    .fields()
+    .paginate()
+    .build()
+    .populate("customer", "name phone role")
+    .populate({
+      path: "subscription",
+      populate: { path: "package", select: "name title" },
+    })
+    .populate("reviewedBy", "name phone role");
 
   const meta = await queryBuilder.getMeta();
 
