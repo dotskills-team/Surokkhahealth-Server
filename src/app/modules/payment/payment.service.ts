@@ -16,7 +16,7 @@ import { SurjoPayService } from "../surjoPay/surjoPay.service";
 import { sendSMS } from "../../utils/sendSms";
 import { MessageType } from "../message/message.interface";
 import { envVars } from "../../config/env";
-import { IsActive } from "../user/user.interface";
+import { IsActive, Role } from "../user/user.interface";
 
 const initPayment = async (subscriptionId: any) => {
 
@@ -265,7 +265,6 @@ const getPaymentStats = async (match: Record<string, any>) => {
     };
 };
 
-
 const buildCustomerSubscriptionFilter = async (searchTerm: string | undefined) => {
     if (!searchTerm) return null;
 
@@ -292,26 +291,171 @@ const buildCustomerSubscriptionFilter = async (searchTerm: string | undefined) =
     return { subscription: { $in: subscriptionIds } };
 };
 
-const getAllPayments = async (query: Record<string, string>) => {
-    const searchTerm = query.searchTerm;
+const getCurrentMonthBoundariesUTC = () => {
+    const now = new Date();
+    const start = new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0),
+    );
+    const end = new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0, 23, 59, 59, 999),
+    );
+    return { start, end };
+};
 
-    const { queryObj, startDateStr, endDateStr } =
-        buildPaymentQueryObj(query);
+const escapeRegex = (value: string) =>
+    value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-    const customerFilter = await buildCustomerSubscriptionFilter(searchTerm);
+// transactionId / phone / name — EXACT match check.
+// Kono payment match korle { $or } return kore, na korle null.
+const buildExactMatchFilter = async (searchTerm: string) => {
+    const matchingUsers = await User.find({
+        $or: [
+            { phone: searchTerm },
+            { name: { $regex: `^${escapeRegex(searchTerm)}$`, $options: "i" } },
+        ],
+    }).select("_id");
+
+    const subscriptionIds = matchingUsers.length
+        ? (
+            await Subscription.find({
+                customer: { $in: matchingUsers.map((u) => u._id) },
+            }).select("_id")
+        ).map((s) => s._id)
+        : [];
+
+    const $or = [
+        { transactionId: searchTerm },
+        { subscription: { $in: subscriptionIds } },
+    ];
+
+    const exists = await PaymentModel.exists({ isDeleted: false, $or });
+
+    return exists ? { $or } : null;
+};
+
+// const getAllPayments = async (query: Record<string, string>) => {
+//     const searchTerm = query.searchTerm;
+
+//     const { queryObj, startDateStr, endDateStr } =
+//         buildPaymentQueryObj(query);
+
+//     const customerFilter = await buildCustomerSubscriptionFilter(searchTerm);
+
+//     const finalFilter: any = { isDeleted: false, ...queryObj };
+
+//     if (customerFilter && searchTerm) {
+//         // combine transactionId/status search (handled by QueryBuilder.search)
+//         // with customer-name/phone based subscription match
+//         finalFilter.$or = [
+//             { transactionId: { $regex: searchTerm, $options: "i" } },
+//             customerFilter,
+//         ];
+
+//         // remove searchTerm so QueryBuilder doesn't re-apply its own narrower search
+//         delete query.searchTerm;
+//     }
+
+//     const baseQuery = PaymentModel.find(finalFilter);
+//     const queryBuilder = new QueryBuilder(baseQuery, query);
+
+//     const data = await queryBuilder
+//         .filter()
+//         .sort()
+//         .fields()
+//         .paginate()
+//         .build()
+//         .populate({
+//             path: "subscription",
+//             select: "planType durationInMonths price status customer",
+//             populate: {
+//                 path: "customer",
+//                 select: "name phone",
+//             },
+//         });
+
+//     const meta = await queryBuilder.getMeta();
+
+//     const statsMatch = { isDeleted: false, ...buildPaymentDateFilter(startDateStr, endDateStr) };
+//     const stats = await getPaymentStats(statsMatch);
+
+//     return { data, meta, stats };
+// };
+
+// =============================================================
+// GET ALL TRASH PAYMENTS
+// =============================================================
+
+
+// Admin / Super Admin -> sob payment
+// Onno role -> CURRENT MONTH only; transactionId / phone / name exact match hole bypass
+const getAllPayments = async ({
+    query,
+    requesterRole,
+}: {
+    query: Record<string, string>;
+    requesterRole: Role;
+}) => {
+    const searchTerm = query.searchTerm?.trim();
+
+    const isAdminOrSuperAdmin =
+        requesterRole === Role.SUPER_ADMIN || requesterRole === Role.ADMIN;
+
+    const { queryObj, startDateStr, endDateStr } = buildPaymentQueryObj(query);
 
     const finalFilter: any = { isDeleted: false, ...queryObj };
+    let statsMatch: Record<string, any>;
 
-    if (customerFilter && searchTerm) {
-        // combine transactionId/status search (handled by QueryBuilder.search)
-        // with customer-name/phone based subscription match
-        finalFilter.$or = [
-            { transactionId: { $regex: searchTerm, $options: "i" } },
-            customerFilter,
-        ];
+    if (isAdminOrSuperAdmin) {
+        // ---------- ADMIN: unrestricted ----------
+        const customerFilter = await buildCustomerSubscriptionFilter(searchTerm);
 
-        // remove searchTerm so QueryBuilder doesn't re-apply its own narrower search
-        delete query.searchTerm;
+        if (customerFilter && searchTerm) {
+            finalFilter.$or = [
+                { transactionId: { $regex: searchTerm, $options: "i" } },
+                customerFilter,
+            ];
+            delete query.searchTerm;
+        }
+
+        statsMatch = {
+            isDeleted: false,
+            ...buildPaymentDateFilter(startDateStr, endDateStr),
+        };
+    } else {
+        // ---------- NON-ADMIN ----------
+        // non-admin er startDate/endDate ignore hobe
+        delete finalFilter.createdAt;
+
+        const exactFilter = searchTerm
+            ? await buildExactMatchFilter(searchTerm)
+            : null;
+
+        if (exactFilter) {
+            // Exact match -> current month restriction bypass, shudhu matched payment
+            finalFilter.$or = exactFilter.$or;
+            delete query.searchTerm;
+
+            statsMatch = { isDeleted: false, $or: exactFilter.$or };
+        } else {
+            // Default -> current month only (partial search-o month er moddhei)
+            const { start, end } = getCurrentMonthBoundariesUTC();
+            finalFilter.createdAt = { $gte: start, $lte: end };
+
+            const customerFilter = await buildCustomerSubscriptionFilter(searchTerm);
+
+            if (customerFilter && searchTerm) {
+                finalFilter.$or = [
+                    { transactionId: { $regex: searchTerm, $options: "i" } },
+                    customerFilter,
+                ];
+                delete query.searchTerm;
+            }
+
+            statsMatch = {
+                isDeleted: false,
+                createdAt: { $gte: start, $lte: end },
+            };
+        }
     }
 
     const baseQuery = PaymentModel.find(finalFilter);
@@ -333,17 +477,12 @@ const getAllPayments = async (query: Record<string, string>) => {
         });
 
     const meta = await queryBuilder.getMeta();
-
-    const statsMatch = { isDeleted: false, ...buildPaymentDateFilter(startDateStr, endDateStr) };
     const stats = await getPaymentStats(statsMatch);
 
     return { data, meta, stats };
 };
 
 
-// =============================================================
-// GET ALL TRASH PAYMENTS
-// =============================================================
 const getAllTrashPayments = async (query: Record<string, string>) => {
     const { queryObj, startDateStr, endDateStr } =
         buildPaymentQueryObj(query);

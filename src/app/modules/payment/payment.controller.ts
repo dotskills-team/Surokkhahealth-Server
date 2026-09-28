@@ -11,6 +11,7 @@ import { MessageType } from "../message/message.interface";
 import { PaymentModel } from "./payment.model";
 import { User } from "../user/user.model";
 import { IsActive } from "../user/user.interface";
+import { JwtPayload } from "jsonwebtoken";
 
 const initPayment = catchAsync(
     async (req: Request, res: Response) => {
@@ -37,9 +38,12 @@ const redirectPayment = catchAsync(async (req: Request, res: Response) => {
 });
 
 const getAllPayments = catchAsync(async (req: Request, res: Response) => {
-    const result = await PaymentService.getAllPayments(
-        req.query as Record<string, string>
-    );
+    const decodedToken = req.user as JwtPayload;
+
+    const result = await PaymentService.getAllPayments({
+        query: req.query as Record<string, string>,
+        requesterRole: decodedToken.role,
+    });
 
     sendResponse(res, {
         success: true,

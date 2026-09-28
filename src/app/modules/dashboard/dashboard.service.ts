@@ -250,16 +250,29 @@ const getDashboardSummary = async (
   };
 };
 
+// ── UPDATED ──
+// Added optional startDate/endDate — customer dashboard passes current month.
 const getCustomerSummary = async (
   customerId: Types.ObjectId,
+  startDate?: Date,
+  endDate?: Date,
 ): Promise<IDashboardSummary> => {
+  const customerSubMatch: Record<string, any> = {
+    customer: customerId,
+    isDeleted: false,
+  };
+
+  if (startDate && endDate) {
+    customerSubMatch.createdAt = {
+      $gte: startDate,
+      $lte: endDate,
+    };
+  }
+
   const [subscriptionAgg] = await Promise.all([
     Subscription.aggregate([
       {
-        $match: {
-          customer: customerId,
-          isDeleted: false,
-        },
+        $match: customerSubMatch,
       },
       {
         $group: {
@@ -420,8 +433,12 @@ const buildCustomerMatch = (
   return match;
 };
 
+// ── UPDATED ──
+// Added optional `restrictLifetimeTo`. When provided (customer dashboard),
+// the "lifetime" card is capped to that range instead of all-time data.
 const generateCustomerOverview = async (
   customerId: Types.ObjectId,
+  restrictLifetimeTo?: { start: Date; end: Date },
 ): Promise<IDashboardOverview> => {
   const { startToday, endToday, startMonth, endMonth } = getDateRanges();
 
@@ -430,7 +447,15 @@ const generateCustomerOverview = async (
 
     getOverviewCard(buildCustomerMatch(customerId, startMonth, endMonth)),
 
-    getOverviewCard(buildCustomerMatch(customerId)),
+    restrictLifetimeTo
+      ? getOverviewCard(
+          buildCustomerMatch(
+            customerId,
+            restrictLifetimeTo.start,
+            restrictLifetimeTo.end,
+          ),
+        )
+      : getOverviewCard(buildCustomerMatch(customerId)),
   ]);
 
   return {
@@ -440,13 +465,28 @@ const generateCustomerOverview = async (
   };
 };
 
-const getCustomerTopPackages = async (customerId: Types.ObjectId) => {
+// ── UPDATED ──
+// Added optional startDate/endDate.
+const getCustomerTopPackages = async (
+  customerId: Types.ObjectId,
+  startDate?: Date,
+  endDate?: Date,
+) => {
+  const match: Record<string, any> = {
+    customer: customerId,
+    isDeleted: false,
+  };
+
+  if (startDate && endDate) {
+    match.createdAt = {
+      $gte: startDate,
+      $lte: endDate,
+    };
+  }
+
   return Subscription.aggregate([
     {
-      $match: {
-        customer: customerId,
-        isDeleted: false,
-      },
+      $match: match,
     },
 
     {
@@ -618,8 +658,8 @@ const getOverviewCard = async (
 // ── UPDATED ──
 // Added optional `restrictLifetimeTo`. When provided (agent / agent leader
 // dashboards), the "lifetime" card is capped to that range instead of
-// showing true all-time data. Admin / customer dashboards don't pass this,
-// so their "lifetime" card is unaffected.
+// showing true all-time data. Admin / super admin dashboard doesn't pass
+// this, so its "lifetime" card is unaffected.
 const generateOverview = async (
   creatorIds?: Types.ObjectId[],
   restrictLifetimeTo?: { start: Date; end: Date },
@@ -647,7 +687,7 @@ const generateOverview = async (
 
 // ── UPDATED ──
 // Added optional startDate/endDate. Admin dashboard calls this with no
-// dates (unrestricted); agent/agent leader dashboards pass current month.
+// dates (unrestricted); all other dashboards pass current month.
 const getRecentSubscriptions = async (
   creatorIds?: Types.ObjectId[],
   startDate?: Date,
@@ -705,8 +745,12 @@ const getRecentSubscriptions = async (
   }));
 };
 
+// ── UPDATED ──
+// Added optional startDate/endDate.
 const getRecentSubscriptionsByCustomer = async (
   customerId?: Types.ObjectId[],
+  startDate?: Date,
+  endDate?: Date,
 ): Promise<IRecentSubscription[]> => {
   const filter: Record<string, any> = {
     isDeleted: false,
@@ -715,6 +759,13 @@ const getRecentSubscriptionsByCustomer = async (
   if (customerId?.length) {
     filter.customer = {
       $in: customerId,
+    };
+  }
+
+  if (startDate && endDate) {
+    filter.createdAt = {
+      $gte: startDate,
+      $lte: endDate,
     };
   }
 
@@ -1035,23 +1086,45 @@ const getRevenueChart = async (
   return result.slice(-12);
 };
 
-const getRecentPartners = async () => {
-  return Partner.find({
+// ── UPDATED ──
+// Added optional startDate/endDate.
+const getRecentPartners = async (startDate?: Date, endDate?: Date) => {
+  const filter: Record<string, any> = {
     isDeleted: false,
-  })
+  };
+
+  if (startDate && endDate) {
+    filter.createdAt = {
+      $gte: startDate,
+      $lte: endDate,
+    };
+  }
+
+  return Partner.find(filter)
     .select("name logo phone email isActive createdAt")
     .sort({ createdAt: -1 })
     .limit(5)
     .lean();
 };
 
-const getManagerSummary = async () => {
+// ── UPDATED ──
+// Added optional startDate/endDate.
+const getManagerSummary = async (startDate?: Date, endDate?: Date) => {
+  const managerMatch: Record<string, any> = {
+    isDeleted: false,
+  };
+
+  if (startDate && endDate) {
+    managerMatch.createdAt = {
+      $gte: startDate,
+      $lte: endDate,
+    };
+  }
+
   const [partnerAgg, branchAgg] = await Promise.all([
     Partner.aggregate([
       {
-        $match: {
-          isDeleted: false,
-        },
+        $match: managerMatch,
       },
       {
         $group: {
@@ -1073,9 +1146,7 @@ const getManagerSummary = async () => {
 
     PartnerBranch.aggregate([
       {
-        $match: {
-          isDeleted: false,
-        },
+        $match: managerMatch,
       },
       {
         $group: {
@@ -1111,10 +1182,21 @@ const getManagerSummary = async () => {
   };
 };
 
-const getRecentBranches = async () => {
-  return PartnerBranch.find({
+// ── UPDATED ──
+// Added optional startDate/endDate.
+const getRecentBranches = async (startDate?: Date, endDate?: Date) => {
+  const filter: Record<string, any> = {
     isDeleted: false,
-  })
+  };
+
+  if (startDate && endDate) {
+    filter.createdAt = {
+      $gte: startDate,
+      $lte: endDate,
+    };
+  }
+
+  return PartnerBranch.find(filter)
     .populate("partner", "name logo")
     .sort({
       createdAt: -1,
@@ -1123,11 +1205,15 @@ const getRecentBranches = async () => {
     .lean();
 };
 
+// ── UPDATED ──
+// Every data source now restricted to the current month.
 const getManagerDashboard = async () => {
+  const { startMonth, endMonth } = getDateRanges();
+
   const [summary, recentPartners, recentBranches] = await Promise.all([
-    getManagerSummary(),
-    getRecentPartners(),
-    getRecentBranches(),
+    getManagerSummary(startMonth, endMonth),
+    getRecentPartners(startMonth, endMonth),
+    getRecentBranches(startMonth, endMonth),
   ]);
 
   return {
@@ -1144,10 +1230,14 @@ const getManagerDashboard = async () => {
   };
 };
 
+// ── UPDATED ──
+// Added optional startDate/endDate.
 const getCustomerRevenueChart = async (
   customerId: Types.ObjectId,
+  startDate?: Date,
+  endDate?: Date,
 ) => {
-  const match = buildCustomerMatch(customerId);
+  const match = buildCustomerMatch(customerId, startDate, endDate);
 
   const result = await Subscription.aggregate([
     {
@@ -1228,8 +1318,14 @@ const getCustomerRevenueChart = async (
   return result.slice(-12);
 };
 
-const getCustomerRecentSubscriptions = async (customerId: Types.ObjectId) => {
-  return getRecentSubscriptionsByCustomer([customerId]);
+// ── UPDATED ──
+// Added optional startDate/endDate.
+const getCustomerRecentSubscriptions = async (
+  customerId: Types.ObjectId,
+  startDate?: Date,
+  endDate?: Date,
+) => {
+  return getRecentSubscriptionsByCustomer([customerId], startDate, endDate);
 };
 
 // ── UPDATED ──
@@ -1335,7 +1431,36 @@ const getPaymentStatusChart = async (
   return result;
 };
 
-const getAdminSummary = async (): Promise<IDashboardSummary> => {
+// ── UPDATED ──
+// Added optional startDate/endDate. Admin / super admin call this with no
+// dates (unrestricted); A_A_MANAGER passes current month. Restricts
+// subscription & customer counts; package / agent / agent leader counts
+// stay unrestricted (current roster, not activity).
+const getAdminSummary = async (
+  startDate?: Date,
+  endDate?: Date,
+): Promise<IDashboardSummary> => {
+  const subMatch: Record<string, any> = {
+    isDeleted: false,
+  };
+
+  const customerMatch: Record<string, any> = {
+    role: Role.CUSTOMER,
+    isDeleted: false,
+  };
+
+  if (startDate && endDate) {
+    subMatch.createdAt = {
+      $gte: startDate,
+      $lte: endDate,
+    };
+
+    customerMatch.createdAt = {
+      $gte: startDate,
+      $lte: endDate,
+    };
+  }
+
   const [
     subscriptionAgg,
     customerCount,
@@ -1345,9 +1470,7 @@ const getAdminSummary = async (): Promise<IDashboardSummary> => {
   ] = await Promise.all([
     Subscription.aggregate([
       {
-        $match: {
-          isDeleted: false,
-        },
+        $match: subMatch,
       },
       {
         $group: {
@@ -1444,10 +1567,7 @@ const getAdminSummary = async (): Promise<IDashboardSummary> => {
       },
     ]),
 
-    User.countDocuments({
-      role: Role.CUSTOMER,
-      isDeleted: false,
-    }),
+    User.countDocuments(customerMatch),
 
     InsurancePackage.countDocuments({
       isDeleted: false,
@@ -1856,15 +1976,16 @@ const getAgentSummary = async (
   };
 };
 
+// ── UPDATED ──
+// Added optional startDate/endDate.
 const getCustomerSubscriptionStatusChart = async (
   customerId: Types.ObjectId,
+  startDate?: Date,
+  endDate?: Date,
 ) => {
   return Subscription.aggregate([
     {
-      $match: {
-        customer: customerId,
-        isDeleted: false,
-      },
+      $match: buildCustomerMatch(customerId, startDate, endDate),
     },
 
     {
@@ -1895,13 +2016,16 @@ const getCustomerSubscriptionStatusChart = async (
   ]);
 };
 
-const getCustomerPaymentStatusChart = async (customerId: Types.ObjectId) => {
+// ── UPDATED ──
+// Added optional startDate/endDate.
+const getCustomerPaymentStatusChart = async (
+  customerId: Types.ObjectId,
+  startDate?: Date,
+  endDate?: Date,
+) => {
   return Subscription.aggregate([
     {
-      $match: {
-        customer: customerId,
-        isDeleted: false,
-      },
+      $match: buildCustomerMatch(customerId, startDate, endDate),
     },
 
     {
@@ -1932,10 +2056,13 @@ const getCustomerPaymentStatusChart = async (customerId: Types.ObjectId) => {
   ]);
 };
 
+// ── UPDATED ──
+// Every data source now restricted to the current month.
 const getCustomerDashboard = async (
   userId: string,
 ): Promise<IDashboardResponse> => {
   const customerId = new Types.ObjectId(userId);
+  const { startMonth, endMonth } = getDateRanges();
 
   const [
     summary,
@@ -1946,19 +2073,19 @@ const getCustomerDashboard = async (
     paymentStatusChart,
     recentSubscriptions,
   ] = await Promise.all([
-    getCustomerSummary(customerId),
+    getCustomerSummary(customerId, startMonth, endMonth),
 
-    generateCustomerOverview(customerId),
+    generateCustomerOverview(customerId, { start: startMonth, end: endMonth }),
 
-    getCustomerTopPackages(customerId),
+    getCustomerTopPackages(customerId, startMonth, endMonth),
 
-    getCustomerRevenueChart(customerId),
+    getCustomerRevenueChart(customerId, startMonth, endMonth),
 
-    getCustomerSubscriptionStatusChart(customerId),
+    getCustomerSubscriptionStatusChart(customerId, startMonth, endMonth),
 
-    getCustomerPaymentStatusChart(customerId),
+    getCustomerPaymentStatusChart(customerId, startMonth, endMonth),
 
-    getCustomerRecentSubscriptions(customerId),
+    getCustomerRecentSubscriptions(customerId, startMonth, endMonth),
   ]);
 
   return {
@@ -1973,7 +2100,7 @@ const getCustomerDashboard = async (
   };
 };
 
-// ── UNCHANGED ── (no restriction — admin sees everything, lifetime)
+// ── UNCHANGED ── (no restriction — admin / super admin sees everything, lifetime)
 const getAdminDashboard = async (): Promise<IDashboardResponse> => {
   const [
     summary,
@@ -2034,7 +2161,7 @@ const getAgentDashboard = async (
   ] = await Promise.all([
     getAgentSummary(creatorIds, startMonth, endMonth),
 
-    generateOverview(creatorIds),
+    generateOverview(creatorIds, { start: startMonth, end: endMonth }),
 
     getTopPackages(creatorIds, startMonth, endMonth),
 
@@ -2101,7 +2228,7 @@ const getAgentLeaderDashboard = async (
   ] = await Promise.all([
     getAgentLeaderSummary(creatorIds, startMonth, endMonth),
 
-    generateOverview(creatorIds),
+    generateOverview(creatorIds, { start: startMonth, end: endMonth }),
 
     getTopPackages(creatorIds, startMonth, endMonth),
 
@@ -2128,7 +2255,53 @@ const getAgentLeaderDashboard = async (
   };
 };
 
+// ── NEW ──
+// A_A_MANAGER: same data as the admin dashboard, restricted to the
+// current month.
+const getAAManagerDashboard = async (): Promise<IDashboardResponse> => {
+  const { startMonth, endMonth } = getDateRanges();
+
+  const [
+    summary,
+    overview,
+    topPackages,
+    revenueChart,
+    subscriptionStatusChart,
+    paymentStatusChart,
+    recentSubscriptions,
+    recentCustomers,
+  ] = await Promise.all([
+    getAdminSummary(startMonth, endMonth),
+
+    generateOverview(undefined, { start: startMonth, end: endMonth }),
+
+    getTopPackages(undefined, startMonth, endMonth),
+
+    getRevenueChart(undefined, startMonth, endMonth),
+
+    getSubscriptionStatusChart(undefined, startMonth, endMonth),
+
+    getPaymentStatusChart(undefined, startMonth, endMonth),
+
+    getRecentSubscriptions(undefined, startMonth, endMonth),
+
+    getRecentCustomers(undefined, startMonth, endMonth),
+  ]);
+
+  return {
+    summary,
+    overview,
+    topPackages,
+    revenueChart,
+    subscriptionStatusChart,
+    paymentStatusChart,
+    recentSubscriptions,
+    recentCustomers,
+  };
+};
+
 export const DashboardServices = {
+  getAAManagerDashboard,
   getAdminDashboard,
   getAgentDashboard,
   getAgentLeaderDashboard,
