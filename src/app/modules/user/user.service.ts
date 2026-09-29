@@ -112,19 +112,18 @@ const applyCustomerVisibilityFilter = ({
   query: Record<string, string>;
   isAdminOrSuperAdmin: boolean;
   dateFilter: Record<string, { $gte?: Date; $lte?: Date }>;
-}): Record<string, { $gte?: Date; $lte?: Date }> => {
-  // Admin / Super Admin: always unrestricted, respects whatever date filter they pass
+}) => {
   if (isAdminOrSuperAdmin) return dateFilter;
-
-  // Non-admin (Agent / Agent Leader):
-  // Only a FULL 11-digit phone number search bypasses the current-month restriction.
   if (isElevenDigitPhone(query.searchTerm)) return {};
 
-  // Anything else — no search, a partial digit search ("0", "017"...), or a
-  // name search — stays restricted to the current month. Explicit
-  // startDate/endDate from a non-admin is also ignored here.
   const { start, end } = getCurrentMonthBoundariesUTC();
-  return { createdAt: { $gte: start, $lte: end } };
+  const range = dateFilter.createdAt;
+
+  // user-er range ke current month-er sathe intersect
+  const gte = range?.$gte && range.$gte > start ? range.$gte : start;
+  const lte = range?.$lte && range.$lte < end ? range.$lte : end;
+
+  return { createdAt: { $gte: gte, $lte: lte } };
 };
 
 // =============================================================
@@ -593,44 +592,6 @@ const updateProfile = async (
 
   return { data: updatedUser };
 };
-
-// Admin / Super Admin — retrieve all customers (UNRESTRICTED — sees everything)
-// const getAllCustomers = async (query: Record<string, string>) => {
-//   const { dateFilter, startDateStr, endDateStr } = buildQueryObj(query);
-
-//   const baseMatch = { role: Role.CUSTOMER, isDeleted: false, ...dateFilter };
-
-//   const queryBuilder = new QueryBuilder(User.find(baseMatch), query);
-
-//   const [data, meta] = await Promise.all([
-//     queryBuilder
-//       .filter()
-//       .search(userSearchableFields)
-//       .sort()
-//       .fields()
-//       .paginate()
-//       .build()
-//       // .populate("createdBy", "name phone role")
-//       // .populate("agentLeader", "name phone role"),
-//       .populate({
-//         path: "createdBy",
-//         select: "name phone role employeeId agentLeader",
-//         populate: {
-//           path: "agentLeader",
-//           select: "name phone role employeeId",
-//         },
-//       }),
-//     queryBuilder.getMeta(),
-//   ]);
-
-//   const stats = await getUserStats({
-//     role: Role.CUSTOMER,
-//     isDeleted: false,
-//     ...buildDateFilter(startDateStr, endDateStr),
-//   });
-
-//   return { data, meta, stats };
-// };
 
 
 // Admin / Super Admin → sob customer dekhte pare (unrestricted)
