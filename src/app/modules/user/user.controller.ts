@@ -307,8 +307,12 @@ const updateUserTrash = catchAsync(async (req: Request, res: Response) => {
 
 // Admin / Super Admin — retrieve all customers
 const getAllCustomers = catchAsync(async (req: Request, res: Response) => {
-  const result = await UserServices.getAllCustomers(
-    req.query as Record<string, string>,
+  const userId = (req.user as JwtPayload).userId;
+
+  const result = await UserServices.getAllCustomers({
+    query: req.query as Record<string, string>,
+    requesterRole: userId,
+  }
   );
 
   sendResponse(res, {
