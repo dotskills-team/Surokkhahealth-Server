@@ -86,7 +86,7 @@ const sendOtp = async (phone: string) => {
   await sendSMS(
     phone,
     // `Your OTP is ${otp}`,
-     ` Your One-Time Password (OTP) is: ${otp}. This code is valid for 2 minutes. Please do not share it with anyone.`,
+    ` Your One-Time Password (OTP) is: ${otp}. This code is valid for 2 minutes. Please do not share it with anyone.`,
     MessageType.OTP
   );
 
@@ -256,6 +256,38 @@ const setPassword = async (
   return null;
 };
 
+const setForgetPassword = async (
+  phone: string,
+  otp: string,
+  password: string,
+) => {
+  const user = await User.findOne({ phone});
+
+  if (!user) {
+    throw new AppError(httpStatus.NOT_FOUND, "User not found");
+  }
+
+  const storedOtp = await getOTP(phone);
+
+  if (!storedOtp) {
+    throw new AppError(httpStatus.BAD_REQUEST, "OTP expired");
+  }
+
+  if (storedOtp !== otp) {
+    throw new AppError(httpStatus.BAD_REQUEST, "Invalid OTP");
+  }
+
+  await deleteOTP(phone);
+
+  user.password = await bcryptjs.hash(
+    password,
+    Number(envVars.BCRYPT_SALT_ROUND),
+  );
+
+  await user.save();
+
+  return null;
+};
 
 export const AuthServices = {
   staffLogin,
@@ -264,5 +296,6 @@ export const AuthServices = {
   getNewAccessToken,
   changePassword,
   adminChangePassword,
-  setPassword
+  setPassword,
+  setForgetPassword,
 };
