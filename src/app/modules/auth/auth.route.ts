@@ -68,4 +68,9 @@ router.post(
   AuthControllers.setPassword,
 );
 
+router.post(
+  "/set-forget-password",
+  AuthControllers.setForgetPassword,
+);
+
 export const authRoutes = router;

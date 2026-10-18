@@ -29,8 +29,9 @@ const staffLogin = catchAsync(async (req: Request, res: Response) => {
 
 const sendOtp = catchAsync(async (req: Request, res: Response) => {
   const { phone } = req.body;
-
-  await AuthServices.sendOtp(phone);
+ console.log("Phone number received for OTP:", phone);
+ const response = await AuthServices.sendOtp(phone);
+  console.log("OTP send response", response);
 
   sendResponse(res, {
     statusCode: httpStatus.OK,
@@ -155,6 +156,21 @@ const setPassword = catchAsync(
   },
 );
 
+const setForgetPassword = catchAsync(
+  async (req: Request, res: Response) => {
+    const { phone, otp, password } = req.body;
+
+    await AuthServices.setForgetPassword(phone, otp, password);
+
+    sendResponse(res, {
+      success: true,
+      statusCode: httpStatus.OK,
+      message: "Password reset successfully",
+      data: null,
+    });
+  },
+);
+
 export const AuthControllers = {
   staffLogin,
   sendOtp,
@@ -164,4 +180,5 @@ export const AuthControllers = {
   logout,
   changePassword,
   setPassword,
+  setForgetPassword,
 };
