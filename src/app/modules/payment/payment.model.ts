@@ -58,6 +58,7 @@
 
 import mongoose, { model, Schema } from "mongoose";
 import { IPayment, PaymentStatus } from "./payment.interface";
+import { PaymentGateway } from "../paymentGatewaySetting/paymentGateway.interface";
 
 const paymentSchema = new Schema<IPayment>(
   {
@@ -79,6 +80,11 @@ const paymentSchema = new Schema<IPayment>(
       type: String,
       unique: true,
       sparse: true,
+    },
+
+    gateway: {
+      type: String,
+      enum: Object.values(PaymentGateway),
     },
 
     amount: {

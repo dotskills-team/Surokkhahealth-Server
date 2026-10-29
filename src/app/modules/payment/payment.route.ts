@@ -27,7 +27,7 @@ router.post("/validate-payment", PaymentController.validatePayment)
 router.patch(
     "/:id/request-refund",
     checkAuth(Role.ADMIN, Role.SUPER_ADMIN),
-    PaymentController.requestSurjoPayRefund
+    PaymentController.requestRefund
 );
 router.get("/all-payments", checkAuth(Role.ADMIN, Role.SUPER_ADMIN, Role.A_A_MANAGER), PaymentController.getAllPayments);
 router.get("/all-trash-payments", checkAuth(Role.ADMIN, Role.SUPER_ADMIN, Role.A_A_MANAGER), PaymentController.getAllTrashPayments);
@@ -36,5 +36,10 @@ router.patch("/:id", checkAuth(Role.ADMIN, Role.SUPER_ADMIN), PaymentController.
 router.patch("/restore/:id", checkAuth(Role.ADMIN, Role.SUPER_ADMIN), PaymentController.restorePayment);
 router.delete("/soft-delete/:id", checkAuth(Role.ADMIN, Role.SUPER_ADMIN), PaymentController.softDeletePayment);
 router.delete("/:id", checkAuth(Role.ADMIN, Role.SUPER_ADMIN), PaymentController.deletePayment);
+
+router.all("/ssl/success", PaymentController.sslSuccess);
+router.all("/ssl/fail", PaymentController.sslFail);
+router.all("/ssl/cancel", PaymentController.sslCancel);
+router.post("/ssl/ipn", PaymentController.sslIpn);
 
 export const paymentRoutes = router;

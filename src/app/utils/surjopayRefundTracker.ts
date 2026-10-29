@@ -5,6 +5,7 @@ import { PaymentStatus } from "../modules/payment/payment.interface";
 import { SurjoPayService } from "../modules/surjoPay/surjoPay.service";
 import { Subscription } from "../modules/subscription/subscription.model";
 import { SubscriptionStatus } from "../modules/subscription/subscription.interface";
+import { PaymentGateway } from "../modules/paymentGatewaySetting/paymentGateway.interface";
 
 const REFUND_CONFIRMED_STATUSES = ["Refunded"];
 
@@ -12,6 +13,7 @@ const reconcilePendingSurjoPayRefunds = async () => {
     const pendingPayments = await PaymentModel.find({
         status: PaymentStatus.REFUND_PENDING,
         spOrderId: { $exists: true, $ne: null },
+        gateway: { $ne: PaymentGateway.SSLCOMMERZ },
     });
 
     if (pendingPayments.length === 0) return;

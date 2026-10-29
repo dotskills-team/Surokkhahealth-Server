@@ -1,14 +1,15 @@
 
 import { Types } from "mongoose";
+import { PaymentGateway } from "../paymentGatewaySetting/paymentGateway.interface";
 
 export enum PaymentStatus {
-    UNPAID = "UNPAID",
-    PAID = "PAID",
-    COMPLETED = "COMPLETED",
-    FAILED = "FAILED",
-    CANCELLED = "CANCELLED",
-    REFUND_PENDING = "REFUND_PENDING", 
-    REFUNDED = "REFUNDED"
+  UNPAID = "UNPAID",
+  PAID = "PAID",
+  COMPLETED = "COMPLETED",
+  FAILED = "FAILED",
+  CANCELLED = "CANCELLED",
+  REFUND_PENDING = "REFUND_PENDING",
+  REFUNDED = "REFUNDED"
 }
 
 export interface IPayment {
@@ -20,10 +21,10 @@ export interface IPayment {
   paymentGatewayData?: any;
   status: PaymentStatus;
   isDeleted: boolean;
-
+  gateway?: PaymentGateway;
   refundData?: any;
   refundRefId?: string;
-  refundReason?: string;        
-  refundRequestedAt?: Date;    
+  refundReason?: string;
+  refundRequestedAt?: Date;
   refundedAt?: Date;
 }
