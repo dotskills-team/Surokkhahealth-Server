@@ -21,6 +21,20 @@ export enum PaymentMethod {
   BANK = "BANK",
 }
 
+export enum DocumentSubmissionAction {
+  CREATED = "CREATED",
+  UPDATED = "UPDATED",
+}
+
+// One entry per upload event (initial submission or a later update).
+// Previous uploads are kept, never replaced.
+export interface IDocumentSubmission {
+  submittedAt: Date;
+  submittedBy?: Types.ObjectId;
+  action: DocumentSubmissionAction;
+  documents: string[];
+}
+
 export interface IClaim {
   _id?: Types.ObjectId;
 
@@ -42,7 +56,11 @@ export interface IClaim {
 
   description: string;
 
+  // Flat list of every document ever submitted for this claim (all uploads).
   attachments?: string[];
+
+  // Date-wise history of document submissions.
+  documentSubmissions?: IDocumentSubmission[];
 
   status: ClaimStatus;
 
@@ -57,3 +75,4 @@ export interface IClaim {
   createdAt?: Date;
   updatedAt?: Date;
 }
+

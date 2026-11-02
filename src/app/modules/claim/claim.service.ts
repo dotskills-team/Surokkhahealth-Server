@@ -2,7 +2,12 @@
 import httpStatus from "http-status-codes";
 import AppError from "../../errorHelpers/appError";
 import { Claim } from "./claim.model";
-import { IClaim, ClaimStatus } from "./claim.interface";
+import {
+  IClaim,
+  ClaimStatus,
+  DocumentSubmissionAction,
+  PaymentMethod,
+} from "./claim.interface";
 import { QueryBuilder } from "../../utils/QueryBuilder";
 import { claimSearchableFields } from "./claim.constants";
 import { Role } from "../user/user.interface";
@@ -57,16 +62,54 @@ const buildDateFilter = (
 
 // CREATE CLAIM
 
-const createClaim = async (payload: IClaim) => {
+// Keep only the fields relevant to the chosen payment method, so switching
+// from BANK to bKash/Nagad doesn't leave stale bank details behind.
+const normalizePaymentInfo = (
+  method: PaymentMethod,
+  info?: Record<string, any> | null,
+): Record<string, any> => {
+  const src = info ?? {};
+
+  if (method === PaymentMethod.BKASH || method === PaymentMethod.NAGAD) {
+    return { mobileNumber: src.mobileNumber };
+  }
+
+  if (method === PaymentMethod.BANK) {
+    return {
+      bankName: src.bankName,
+      accountName: src.accountName,
+      accountNumber: src.accountNumber,
+      routingNumber: src.routingNumber,
+      branchName: src.branchName,
+    };
+  }
+
+  return {};
+};
+
+const createClaim = async (payload: Record<string, any>, userId: string) => {
   const subscription = await Subscription.findById(payload.subscription);
 
   if (!subscription) {
     throw new AppError(httpStatus.NOT_FOUND, "Subscription not found");
   }
 
+  const documents: string[] = payload.attachments ?? [];
+
   return await Claim.create({
     ...payload,
+    paymentInfo: normalizePaymentInfo(payload.paymentMethod, payload.paymentInfo),
     status: ClaimStatus.PENDING,
+    documentSubmissions: documents.length
+      ? [
+          {
+            submittedAt: new Date(),
+            submittedBy: userId,
+            action: DocumentSubmissionAction.CREATED,
+            documents,
+          },
+        ]
+      : [],
   });
 };
 
@@ -146,7 +189,8 @@ const getAllClaims = async ({
       path: "subscription",
       populate: { path: "package", select: "name title" },
     })
-    .populate("reviewedBy", "name phone role");
+    .populate("reviewedBy", "name phone role")
+    .populate("documentSubmissions.submittedBy", "name role");
 
   const meta = await queryBuilder.getMeta();
 
@@ -242,7 +286,8 @@ const getSingleClaim = async (id: string) => {
   const claim = await Claim.findById(id)
     .populate("customer", "name phone role")
     .populate("subscription")
-    .populate("reviewedBy", "name phone role");
+    .populate("reviewedBy", "name phone role")
+    .populate("documentSubmissions.submittedBy", "name role");
 
   if (!claim) {
     throw new AppError(httpStatus.NOT_FOUND, "Claim not found");
@@ -252,7 +297,13 @@ const getSingleClaim = async (id: string) => {
 };
 
 // UPDATE CLAIM
-const updateClaim = async (id: string, payload: Partial<IClaim>) => {
+// Uploaded documents are appended (never replaced) and recorded as a dated
+// submission entry, so the full document history stays available.
+const updateClaim = async (
+  id: string,
+  payload: Partial<IClaim>,
+  userId: string,
+) => {
   const claim = await Claim.findById(id);
 
   if (!claim) {
@@ -271,7 +322,30 @@ const updateClaim = async (id: string, payload: Partial<IClaim>) => {
     payload.reviewedAt = undefined;
   }
 
-  return await Claim.findByIdAndUpdate(id, payload, {
+  const { attachments: newDocuments = [], ...fields } = payload;
+
+  if (fields.paymentInfo !== undefined || fields.paymentMethod) {
+    fields.paymentInfo = normalizePaymentInfo(
+      (fields.paymentMethod ?? claim.paymentMethod) as PaymentMethod,
+      (fields.paymentInfo ?? claim.paymentInfo) as unknown as Record<string, any>,
+    ) as any;
+  }
+
+  const update: Record<string, any> = { $set: fields };
+
+  if (newDocuments.length) {
+    update.$push = {
+      attachments: { $each: newDocuments },
+      documentSubmissions: {
+        submittedAt: new Date(),
+        submittedBy: userId,
+        action: DocumentSubmissionAction.UPDATED,
+        documents: newDocuments,
+      },
+    };
+  }
+
+  return await Claim.findByIdAndUpdate(id, update, {
     returnDocument: "after",
     runValidators: true,
   });

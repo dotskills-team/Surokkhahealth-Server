@@ -5,13 +5,30 @@ import { catchAsync } from "../../utils/catchAsync";
 import { sendResponse } from "../../utils/sendResponse";
 
 import { ClaimService } from "./claim.service";
+import {
+  createClaimValidationSchema,
+  updateClaimValidationSchema,
+} from "./claim.validation";
+
+// multipart/form-data sends nested objects (paymentInfo) as JSON strings.
+const buildClaimPayload = (req: Request) => {
+  const payload: Record<string, any> = { ...req.body };
+
+  if (payload.paymentInfo !== undefined) {
+    payload.paymentInfo = typeof payload.paymentInfo === "string"
+      ? JSON.parse(payload.paymentInfo)
+      : payload.paymentInfo;
+  }
+
+  return payload;
+};
 
 const createClaim = catchAsync(
   async (
     req: Request,
     res: Response,
   ) => {
-    const payload = req.body;
+    const payload = buildClaimPayload(req);
 
     const files = req.files as Express.Multer.File[];
 
@@ -21,9 +38,12 @@ const createClaim = catchAsync(
       );
     }
 
+    createClaimValidationSchema.parse(payload);
+
     const result =
       await ClaimService.createClaim(
         payload,
+        (req.user as any).userId,
       );
 
     sendResponse(res, {
@@ -123,7 +143,7 @@ const updateClaim = catchAsync(
     req: Request,
     res: Response
   ) => {
-    const payload = req.body;
+    const payload = buildClaimPayload(req);
 
     const files = req.files as Express.Multer.File[];
 
@@ -133,10 +153,13 @@ const updateClaim = catchAsync(
       );
     }
 
+    updateClaimValidationSchema.parse(payload);
+
     const result =
       await ClaimService.updateClaim(
         req.params.id as string,
         payload,
+        (req.user as any).userId,
       );
 
     sendResponse(res, {

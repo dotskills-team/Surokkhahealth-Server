@@ -2,9 +2,35 @@ import { model, Schema } from "mongoose";
 import {
   ClaimStatus,
   ClaimTitle,
+  DocumentSubmissionAction,
   IClaim,
+  IDocumentSubmission,
   PaymentMethod,
 } from "./claim.interface";
+
+const documentSubmissionSchema = new Schema<IDocumentSubmission>(
+  {
+    submittedAt: {
+      type: Date,
+      required: true,
+      default: Date.now,
+    },
+    submittedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+    },
+    action: {
+      type: String,
+      enum: Object.values(DocumentSubmissionAction),
+      required: true,
+    },
+    documents: {
+      type: [String],
+      default: [],
+    },
+  },
+  { _id: false },
+);
 
 const claimSchema = new Schema<IClaim>(
   {
@@ -30,6 +56,11 @@ const claimSchema = new Schema<IClaim>(
 
     attachments: {
       type: [String],
+      default: [],
+    },
+
+    documentSubmissions: {
+      type: [documentSubmissionSchema],
       default: [],
     },
 
