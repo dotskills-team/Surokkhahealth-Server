@@ -3,7 +3,7 @@ import bcryptjs from "bcryptjs";
 import { JwtPayload } from "jsonwebtoken";
 
 import { User } from "../user/user.model";
-import { Role } from "../user/user.interface";
+import { IsActive, IUser, Role } from "../user/user.interface";
 
 import AppError from "../../errorHelpers/appError";
 import { envVars } from "../../config/env";
@@ -20,7 +20,22 @@ import {
   deleteOTP,
 } from "../../utils/otpRedis";
 import { sendSMS } from "../../utils/sendSms";
+import { SiteSettingService } from "../siteSetting/siteSetting.service";
 import { MessageType } from "../message/message.interface";
+
+// Blocked / inactive / deleted users can neither log in nor receive an OTP.
+const assertUserCanAuthenticate = (user: Pick<IUser, "isActive" | "isDeleted">) => {
+  if (
+    user.isActive === IsActive.INACTIVE ||
+    user.isActive === IsActive.BLOCKED
+  ) {
+    throw new AppError(httpStatus.FORBIDDEN, `User is ${user.isActive}`);
+  }
+
+  if (user.isDeleted) {
+    throw new AppError(httpStatus.FORBIDDEN, "User is deleted");
+  }
+};
 
 const staffLogin = async (
   phone: string,
@@ -51,6 +66,9 @@ const staffLogin = async (
     );
   }
 
+  assertUserCanAuthenticate(user);
+  await SiteSettingService.assertRoleAllowed(user.role);
+
   user.lastLoginAt = new Date();
   await user.save();
 
@@ -78,6 +96,8 @@ const sendOtp = async (phone: string) => {
       "Customer not found",
     );
   }
+
+  assertUserCanAuthenticate(user);
 
   const otp = generateOTP();
 
@@ -108,6 +128,8 @@ const verifyOtp = async (
       "Customer not found",
     );
   }
+
+  assertUserCanAuthenticate(user);
 
   const storedOtp = await getOTP(phone);
 
@@ -266,6 +288,9 @@ const setForgetPassword = async (
   if (!user) {
     throw new AppError(httpStatus.NOT_FOUND, "User not found");
   }
+
+  assertUserCanAuthenticate(user);
+  await SiteSettingService.assertRoleAllowed(user.role);
 
   const storedOtp = await getOTP(phone);
 

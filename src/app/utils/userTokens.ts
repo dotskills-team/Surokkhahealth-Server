@@ -6,6 +6,7 @@ import { IsActive, IUser } from "../modules/user/user.interface";
 import { generateToken, verifyToken } from "./jwt";
 import { User } from "../modules/user/user.model";
 import { JwtPayload } from "jsonwebtoken";
+import { SiteSettingService } from "../modules/siteSetting/siteSetting.service";
 
 export const createUserTokens = (user: Partial<IUser>) => {
   const tokenPayload = {
@@ -60,6 +61,8 @@ export const createNewAccessTokenWithRefreshToken = async (
   if (isUserExist.isDeleted) {
     throw new AppError(httpStatus.BAD_REQUEST, "User is deleted");
   }
+
+  await SiteSettingService.assertRoleAllowed(isUserExist.role);
 
   const tokenPayload = {
     userId: isUserExist._id,

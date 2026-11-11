@@ -13,6 +13,7 @@ import { ClaimRoutes } from "../modules/claim/claim.route";
 import { DashboardRoutes } from "../modules/dashboard/dashboard.route";
 import { consultationRoutes } from "../modules/consultation/consultation.route";
 import { paymentSettingRoutes } from "../modules/paymentGatewaySetting/paymentGateway.route";
+import { siteSettingRoutes } from "../modules/siteSetting/siteSetting.route";
 
 export const router = Router();
 
@@ -72,6 +73,10 @@ const moduleRoutes = [
   {
     path: "/payment-setting",
     route: paymentSettingRoutes
+  },
+  {
+    path: "/site-setting",
+    route: siteSettingRoutes
   },
 ];
 

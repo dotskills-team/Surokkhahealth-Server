@@ -6,6 +6,7 @@ import { envVars } from "../config/env";
 import { User } from "../modules/user/user.model";
 import { IsActive } from "../modules/user/user.interface";
 import { verifyToken } from "../utils/jwt";
+import { SiteSettingService } from "../modules/siteSetting/siteSetting.service";
 
 export const checkAuth =
   (...authRoles: string[]) =>
@@ -46,6 +47,9 @@ export const checkAuth =
       if (isUserExist.isDeleted) {
         throw new AppError(httpStatus.BAD_REQUEST, "User is deleted");
       }
+
+      // Staff access can be switched off site-wide by an admin
+      await SiteSettingService.assertRoleAllowed(isUserExist.role);
 
       // console.log("Verified token ", verifiedToken);
 
