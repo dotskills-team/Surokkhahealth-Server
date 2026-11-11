@@ -221,18 +221,24 @@ const createSubscription = async (
       endDate.setMonth(endDate.getMonth() + selectedPlan.durationInMonths);
     }
 
+    // A customer may hold only ONE live subscription for themselves (any
+    // package). Further purchases must be for someone else (subscribeFor OTHER).
+    // "Live" = ACTIVE, or PENDING (awaiting payment), and not yet past its end date.
     if (subscribeFor === SubscribeFor.SELF) {
-      const existingSubscription = await Subscription.findOne({
+      const existingSelfSubscription = await Subscription.findOne({
         customer: customerId,
-        package: insurancePackage._id,
         subscribeFor: SubscribeFor.SELF,
         isDeleted: false,
-      });
+        status: {
+          $in: [SubscriptionStatus.ACTIVE, SubscriptionStatus.PENDING],
+        },
+        $or: [{ endDate: null }, { endDate: { $gt: new Date() } }],
+      }).session(session);
 
-      if (existingSubscription) {
+      if (existingSelfSubscription) {
         throw new AppError(
           httpStatus.BAD_REQUEST,
-          "Customer already has an active subscription for this package",
+          "You already have a subscription for yourself. You can only buy another subscription for someone else.",
         );
       }
     }
@@ -1049,7 +1055,74 @@ const updateSubscription = async (
     );
   }
 
-  const updated = await Subscription.findByIdAndUpdate(id, payload, {
+  // ---- "Subscribed For" change (SELF <-> OTHER) ----
+  // Update validators don't run the schema's conditional "beneficiary required"
+  // rule, so everything is checked explicitly here.
+  const update: Record<string, any> = { ...payload };
+
+  if (payload.subscribeFor !== undefined) {
+    const newSubscribeFor = payload.subscribeFor;
+
+    if (!Object.values(SubscribeFor).includes(newSubscribeFor)) {
+      throw new AppError(httpStatus.BAD_REQUEST, "Invalid subscribeFor value");
+    }
+
+    const pkg = await InsurancePackage.findById(existing.package);
+
+    if (newSubscribeFor === SubscribeFor.OTHER) {
+      // Joint packages always cover the main customer themselves
+      if (pkg?.isJoint) {
+        throw new AppError(
+          httpStatus.BAD_REQUEST,
+          "A Joint package subscription must be for the customer themselves",
+        );
+      }
+
+      const b = payload.beneficiary ?? existing.beneficiary;
+
+      if (!b?.name?.trim() || !b?.phone?.trim() || !b?.relationship?.trim()) {
+        throw new AppError(
+          httpStatus.BAD_REQUEST,
+          "Beneficiary name, phone and relationship are required",
+        );
+      }
+
+      update.beneficiary = {
+        name: b.name.trim(),
+        phone: b.phone.trim(),
+        relationship: b.relationship.trim(),
+        ...(b.dateOfBirth && { dateOfBirth: b.dateOfBirth }),
+      };
+    } else {
+      // SELF: a customer may hold only ONE live subscription for themselves.
+      const otherSelfSubscription = await Subscription.findOne({
+        _id: { $ne: existing._id },
+        customer: existing.customer,
+        subscribeFor: SubscribeFor.SELF,
+        isDeleted: false,
+        status: {
+          $in: [SubscriptionStatus.ACTIVE, SubscriptionStatus.PENDING],
+        },
+        $or: [{ endDate: null }, { endDate: { $gt: new Date() } }],
+      });
+
+      if (otherSelfSubscription) {
+        throw new AppError(
+          httpStatus.BAD_REQUEST,
+          "This customer already has another subscription for themselves. A subscription can only be changed to 'Self' if they have no other active self subscription.",
+        );
+      }
+
+      // Beneficiary only exists for OTHER
+      delete update.beneficiary;
+      update.$unset = { beneficiary: 1 };
+    }
+  } else if (payload.beneficiary && existing.subscribeFor !== SubscribeFor.OTHER) {
+    // Beneficiary details make no sense on a SELF subscription
+    delete update.beneficiary;
+  }
+
+  const updated = await Subscription.findByIdAndUpdate(id, update, {
     returnDocument: "after",
     runValidators: true,
   });

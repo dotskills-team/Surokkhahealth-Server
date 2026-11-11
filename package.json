@@ -3,13 +3,13 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "dev": "ts-node-dev --respawn --transpile-only ./src/server.ts",
+    "dev": "node init && ts-node-dev --respawn --transpile-only ./src/server.ts",
     "migrate:deliveredAt": "ts-node-dev --transpile-only src/scripts/migrateDeliveredAt.ts",
     "lint": "npx eslint ./src",
     "clear:db": "ts-node-dev src/scripts/clearDB.ts",
     "generate:secret": "ts-node-dev src/scripts/generateSecret.ts",
-    "build": "tsc",
-    "start": "node dist/server.js",
+    "build": "node init && tsc",
+    "start": "node init && node dist/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -47,6 +47,7 @@
     "multer": "^2.0.2",
     "multer-storage-cloudinary": "^4.0.0",
     "node-cron": "^4.5.0",
+    "node-fetch": "^3.3.2",
     "pdfkit": "^0.17.2",
     "zod": "^3.22.4"
   }
