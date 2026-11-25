@@ -1227,10 +1227,9 @@ const getAllPayments = async ({
     const isAdminOrSuperAdmin =
         requesterRole === Role.SUPER_ADMIN || requesterRole === Role.ADMIN;
 
-    const { queryObj, startDateStr, endDateStr } = buildPaymentQueryObj(query);
+    const { queryObj } = buildPaymentQueryObj(query);
 
     const finalFilter: any = { isDeleted: false, ...queryObj };
-    let statsMatch: Record<string, any>;
 
     if (isAdminOrSuperAdmin) {
         // ---------- ADMIN: unrestricted ----------
@@ -1243,11 +1242,6 @@ const getAllPayments = async ({
             ];
             delete query.searchTerm;
         }
-
-        statsMatch = {
-            isDeleted: false,
-            ...buildPaymentDateFilter(startDateStr, endDateStr),
-        };
     } else {
         // ---------- NON-ADMIN ----------
         // non-admin er startDate/endDate ignore hobe
@@ -1261,8 +1255,6 @@ const getAllPayments = async ({
             // Exact match -> current month restriction bypass, shudhu matched payment
             finalFilter.$or = exactFilter.$or;
             delete query.searchTerm;
-
-            statsMatch = { isDeleted: false, $or: exactFilter.$or };
         } else {
             // Default -> current month only (partial search-o month er moddhei)
             const { start, end } = getCurrentMonthBoundariesUTC();
@@ -1277,11 +1269,6 @@ const getAllPayments = async ({
                 ];
                 delete query.searchTerm;
             }
-
-            statsMatch = {
-                isDeleted: false,
-                createdAt: { $gte: start, $lte: end },
-            };
         }
     }
 
@@ -1304,6 +1291,11 @@ const getAllPayments = async ({
         });
 
     const meta = await queryBuilder.getMeta();
+    // Stat cards table er same filter use kore (status, gateway, search, date).
+    // Pagination apply hoy na. aggregate() auto-cast kore na, tai age cast.
+    const statsMatch = PaymentModel.find().cast(PaymentModel, {
+        ...queryBuilder.modelQuery.getFilter(),
+    });
     const stats = await getPaymentStats(statsMatch);
 
     return { data, meta, stats };
